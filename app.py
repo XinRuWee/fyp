@@ -28,7 +28,7 @@ with st.expander("🛠️ Developer / Debug View", expanded=True):
     col2.metric("Ben Guilt", st.session_state.ben_state["Guilt"])
     st.write(f"**Current Turn:** {st.session_state.turn_counter}")
 
-# --- THE "DIRECTOR" LOGIC (Your Story Engine) ---
+# --- THE "DIRECTOR" LOGIC (Story Engine) ---
 def process_turn(player_input):
     st.session_state.turn_counter += 1
     current_turn = st.session_state.turn_counter
