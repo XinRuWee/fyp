@@ -1,90 +1,139 @@
 import streamlit as st
-import time
+import pandas as pd
+from modules.engine import StoryDirector
+from modules.perception import PerceptionModule
 
-# --- CONFIGURATION ---
-# (Later, we will replace this with the real LLM call)
-def get_llm_response(prompt, character_name):
-    # This is a FAKE LLM for testing the story flow
-    time.sleep(1) # Simulate thinking
-    return f"[{character_name} says something passive-aggressive about the prompt: '{prompt}']"
+st.cache_data.clear()
+st.cache_resource.clear()
 
-# --- SESSION STATE INITIALIZATION ---
-# This is how Streamlit remembers data between clicks
-if "turn_counter" not in st.session_state:
-    st.session_state.turn_counter = 0
-    st.session_state.history = [] # Stores the chat log
-    # Initial Emotional State (The "Variables" for your experiment)
-    st.session_state.alex_state = {"Suspicion": 0.8, "Anger": 0.2}
-    st.session_state.ben_state = {"Guilt": 0.9, "Fear": 0.8}
+# Initialize Session State
+if "director" not in st.session_state:
+    st.session_state.director = StoryDirector()
+    st.session_state.perceiver = PerceptionModule() 
+    st.session_state.history = []
+    # Track emotional history for the graph
+    st.session_state.chart_data = pd.DataFrame(columns=["Turn", "Suspicion", "Guilt"])
 
-# --- THE UI LAYOUT ---
-st.title("FYP Experiment: 'The Anniversary'")
-st.markdown("**Objective:** Survive the dinner. De-escalate the conflict.")
+st.title("The Anniversary: An Interactive Narrative Experiment")
 
-# Display the "Hidden" Debug Dashboard (For you, the developer)
-with st.expander("🛠️ Developer / Debug View", expanded=True):
-    col1, col2 = st.columns(2)
-    col1.metric("Alex Suspicion", st.session_state.alex_state["Suspicion"])
-    col2.metric("Ben Guilt", st.session_state.ben_state["Guilt"])
-    st.write(f"**Current Turn:** {st.session_state.turn_counter}")
-
-# --- THE "DIRECTOR" LOGIC (Story Engine) ---
-def process_turn(player_input):
-    st.session_state.turn_counter += 1
-    current_turn = st.session_state.turn_counter
+# --- SIDEBAR: LIVE DEBUG DASHBOARD ---
+with st.sidebar:
+    st.header("📊 Emotional Metrics")
     
-    # Add player move to history
-    st.session_state.history.append({"role": "user", "content": player_input})
+    # KPIs
+    col1, col2 = st.columns(2)
+    col1.metric("Alex Suspicion", st.session_state.director.alex.states["Suspicion"])
+    col2.metric("Ben Guilt", st.session_state.director.ben.states["Guilt"])
+    
+    # Real-time Line Chart
+    if not st.session_state.chart_data.empty:
+        st.subheader("Emotional Drift")
+        st.line_chart(st.session_state.chart_data.set_index("Turn"))
 
-    # --- ACT 1: THE PROXY WAR ---
-    if current_turn == 3:
-        # BEAT 1: The Proxy Question (Hard-coded event)
-        beat_context = "Alex asks the player a leading question about keeping secrets."
-        
-        # 1. Alex speaks first
-        alex_response = "So, [Player]... do you think partners should keep secrets if it's for the 'best'?"
-        st.session_state.history.append({"role": "assistant", "name": "Alex", "content": alex_response})
-        
-        # 2. Ben reacts (Simulated LLM)
-        ben_prompt = f"React nervously to Alex asking about secrets. Your Guilt is {st.session_state.ben_state['Guilt']}."
-        ben_response = get_llm_response(ben_prompt, "Ben")
-        st.session_state.history.append({"role": "assistant", "name": "Ben", "content": ben_response})
+    if st.button("Reset Experiment"):
+        st.session_state.clear()
+        st.rerun()
 
-    # --- ACT 2: THE ESCALATION ---
-    elif current_turn == 7:
-        # BEAT 2: The Phone Call
-        st.session_state.history.append({"role": "system", "content": " *Ben's phone rings. Caller ID: 'Berlin Relocation Services'. Alex sees it.* "})
-        
-        # Alex Reacts (Simulated LLM)
-        alex_prompt = f"You just saw the Berlin caller ID. Your Suspicion is {st.session_state.alex_state['Suspicion']}. React with ice-cold anger."
-        alex_response = get_llm_response(alex_prompt, "Alex")
-        st.session_state.history.append({"role": "assistant", "name": "Alex", "content": alex_response})
+# --- CHAT INTERFACE ---
+if "narrative_started" not in st.session_state:
+    st.session_state.narrative_started = False
 
-    # --- NORMAL CONVERSATION LOOP ---
-    else:
-        # Standard turn: Both NPCs react to the player
-        # (In the full version, you'd check who the player addressed)
-        
-        # Alex Reacts
-        alex_response = get_llm_response(f"React to: {player_input}", "Alex")
-        st.session_state.history.append({"role": "assistant", "name": "Alex", "content": alex_response})
-        
-        # Ben Reacts
-        ben_response = get_llm_response(f"React to: {player_input}", "Ben")
-        st.session_state.history.append({"role": "assistant", "name": "Ben", "content": ben_response})
+if not st.session_state.narrative_started:
+    st.subheader("The Scene")
+    st.write("""
+    You're at 'The Gilded Rose' restaurant. Across the room, you spot two familiar faces: 
+    **Alex and Ben.** You haven't spoken since graduation. 
+    
+    They look... different. Alex is staring at a wine glass; Ben looks like he wants to bolt.
+    As you approach the table, they both jump slightly and look up.
+    """)
+    if st.button("Walk up and say hi"):
+        st.session_state.narrative_started = True
+        st.rerun()
+else:
 
-# --- DISPLAY CHAT HISTORY ---
-for message in st.session_state.history:
-    if message["role"] == "user":
-        with st.chat_message("user"):
-            st.write(message["content"])
-    elif message["role"] == "system":
-        st.info(message["content"]) # Special styling for narrative events
-    else:
-        with st.chat_message("assistant", avatar="😠" if message["name"]=="Alex" else "😰"):
-            st.write(f"**{message['name']}:** {message['content']}")
+    chat_container = st.container()
 
-# --- INPUT AREA ---
-if prompt := st.chat_input("What do you say?"):
-    process_turn(prompt)
-    st.rerun() # Refresh page to show new messages
+    with chat_container:
+        for msg in st.session_state.history:
+            # Use avatars to make it look like a real app
+            avatar = "👤" if msg["role"] == "user" else "🤖"
+            with st.chat_message(msg["role"], avatar=avatar):
+                st.write(msg["content"])
+
+    progress = min(st.session_state.director.turn / 12, 1.0)
+    st.progress(progress, text=f"Current Act: {st.session_state.director.current_beat}")
+
+    if prompt := st.chat_input("Speak to Alex and Ben..."):
+        # 1. SHOW USER INPUT IMMEDIATELY
+        with chat_container:
+            with st.chat_message("user", avatar="👤"):
+                st.write(prompt)
+        
+        # Save it to history so it persists after rerun
+        st.session_state.history.append({"role": "user", "content": prompt})
+
+        current_beat, event_text = st.session_state.director.update_beat()
+
+        # If an event happens, show it as a special "Narrative Note"
+        if event_text:
+            st.session_state.history.append({"role": "event", "content": event_text})
+
+        # 2. TRIGGER THE "THINKING" PHASE
+        # This prevents the app from feeling frozen
+        with st.chat_message("assistant", avatar="🤖"):
+            with st.status("Alex and Ben are reacting...", expanded=False) as status:
+                # A. Perception
+                intent = st.session_state.perceiver.get_intent(prompt)
+                st.write(f"Perceived intent: **{intent}**")
+                
+                # B. Update Engine
+                st.session_state.director.turn += 1
+                st.session_state.director.alex.update(intent, prompt)
+                st.session_state.director.ben.update(intent, prompt)
+                st.write("Updating emotional states...")
+
+                # C. Generate Responses
+                # Alex's turn
+                alex_reply = st.session_state.director.alex.generate_response(
+                    prompt, 
+                    st.session_state.perceiver.llm, 
+                    current_beat,
+                    intent,
+                    st.session_state.history
+                )
+
+                # IMPORTANT: We add Alex's reply to history IMMEDIATELY 
+                # so Ben can "hear" it before he generates his own response.
+                st.session_state.history.append({"role": "assistant", "content": f"Alex: {alex_reply}"})
+                
+                # Ben's turn
+                ben_reply = st.session_state.director.ben.generate_response(
+                    prompt, 
+                    st.session_state.perceiver.llm, 
+                    current_beat,
+                    intent,
+                    st.session_state.history
+                )
+
+                st.session_state.history.append({"role": "assistant", "content": f"Ben: {ben_reply}"})
+
+                status.update(label="Response ready!", state="complete", expanded=False)
+
+        new_entry = pd.DataFrame([{
+            "Turn": st.session_state.director.turn, 
+            "Suspicion": st.session_state.director.alex.states["Suspicion"],
+            "Guilt": st.session_state.director.ben.states["Guilt"]
+        }])
+        st.session_state.chart_data = pd.concat([st.session_state.chart_data, new_entry], ignore_index=True)
+
+        # This forces Streamlit to clean up the UI and show the new history
+        st.rerun()
+
+# --- ENDING CHECK ---
+if st.session_state.director.turn >= 12:
+    ending = st.session_state.director.check_ending()
+    st.success(f"**SCENE COMPLETE:** {ending}")
+    if st.button("Reset Experiment"):
+        st.session_state.clear()
+        st.rerun()
